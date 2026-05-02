@@ -1,0 +1,297 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Flight Delay Predictor</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #fafafa; color: #1a1a1a; min-height: 100vh; }
+
+    .container { max-width: 640px; margin: 0 auto; padding: 40px 20px; }
+
+    h1 { font-size: 22px; font-weight: 600; margin-bottom: 4px; }
+    .subtitle { font-size: 14px; color: #666; margin-bottom: 32px; }
+
+    .form-group { margin-bottom: 20px; }
+    label { display: block; font-size: 13px; font-weight: 500; margin-bottom: 6px; color: #333; }
+
+    input, select { width: 100%; padding: 10px 12px; font-size: 15px; border: 1px solid #d0d0d0; border-radius: 6px; background: #fff; color: #1a1a1a; outline: none; }
+    input:focus, select:focus { border-color: #2563eb; }
+    input::placeholder { color: #999; }
+
+    .row { display: flex; gap: 12px; }
+    .row > .form-group { flex: 1; }
+
+    .btn { width: 100%; padding: 12px; font-size: 15px; font-weight: 600; border: none; border-radius: 6px; background: #2563eb; color: #fff; cursor: pointer; margin-top: 8px; }
+    .btn:hover { background: #1d4ed8; }
+    .btn:disabled { background: #93c5fd; cursor: not-allowed; }
+
+    .result-card { margin-top: 28px; padding: 24px; background: #fff; border: 1px solid #e0e0e0; border-radius: 8px; display: none; }
+    .result-card.show { display: block; }
+
+    .result-header { display: flex; align-items: center; gap: 10px; margin-bottom: 16px; }
+    .status-badge { padding: 4px 10px; border-radius: 12px; font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; }
+    .status-green { background: #dcfce7; color: #166534; }
+    .status-yellow { background: #fef3c7; color: #92400e; }
+    .status-red { background: #fee2e2; color: #991b1b; }
+
+    .result-route { font-size: 18px; font-weight: 600; }
+    .result-route span { color: #666; font-weight: 400; font-size: 14px; }
+
+    .metrics { display: flex; gap: 16px; margin: 16px 0; }
+    .metric { flex: 1; text-align: center; padding: 12px; background: #f8f8f8; border-radius: 6px; }
+    .metric-value { font-size: 22px; font-weight: 700; }
+    .metric-label { font-size: 11px; color: #666; margin-top: 2px; }
+
+    .llm-analysis { margin-top: 16px; padding: 16px; background: #f8f9ff; border-radius: 6px; border-left: 3px solid #2563eb; }
+    .llm-analysis h3 { font-size: 13px; font-weight: 600; margin-bottom: 8px; color: #2563eb; }
+    .llm-analysis p { font-size: 14px; line-height: 1.6; color: #333; }
+
+    .shap-section { margin-top: 16px; }
+    .shap-section h3 { font-size: 13px; font-weight: 600; margin-bottom: 10px; }
+    .shap-bar { display: flex; align-items: center; margin-bottom: 6px; font-size: 12px; }
+    .shap-name { width: 180px; text-align: right; padding-right: 10px; color: #555; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .shap-fill { height: 16px; border-radius: 3px; min-width: 2px; }
+    .shap-fill.pos { background: #ef4444; }
+    .shap-fill.neg { background: #3b82f6; }
+    .shap-val { padding-left: 6px; color: #888; font-size: 11px; }
+
+    .error-msg { margin-top: 16px; padding: 12px; background: #fee2e2; border-radius: 6px; color: #991b1b; font-size: 14px; display: none; }
+    .error-msg.show { display: block; }
+
+    .spinner { display: inline-block; width: 16px; height: 16px; border: 2px solid #fff; border-top-color: transparent; border-radius: 50%; animation: spin 0.6s linear infinite; vertical-align: middle; margin-right: 6px; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    .footer { margin-top: 40px; text-align: center; font-size: 11px; color: #999; }
+    .footer a { color: #999; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>Flight Delay Predictor</h1>
+    <p class="subtitle">Enter your flight details to get a delay prediction powered by ML models trained on 7M+ flights.</p>
+
+    <form id="predict-form" autocomplete="off">
+      <div class="row">
+        <div class="form-group">
+          <label for="carrier">Airline</label>
+          <select id="carrier" required>
+            <option value="">Select airline</option>
+            <option value="AA">AA - American Airlines</option>
+            <option value="AS">AS - Alaska Airlines</option>
+            <option value="B6">B6 - JetBlue</option>
+            <option value="DL">DL - Delta Air Lines</option>
+            <option value="F9">F9 - Frontier Airlines</option>
+            <option value="G4">G4 - Allegiant Air</option>
+            <option value="HA">HA - Hawaiian Airlines</option>
+            <option value="NK">NK - Spirit Airlines</option>
+            <option value="UA">UA - United Airlines</option>
+            <option value="WN">WN - Southwest Airlines</option>
+            <option value="9E">9E - Endeavor Air</option>
+            <option value="MQ">MQ - Envoy Air</option>
+            <option value="OH">OH - PSA Airlines</option>
+            <option value="OO">OO - SkyWest Airlines</option>
+            <option value="YX">YX - Republic Airways</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label for="flight-num">Flight Number</label>
+          <input type="number" id="flight-num" placeholder="1234" min="1" max="9999" required>
+        </div>
+      </div>
+
+      <div class="form-group">
+        <label for="origin">Origin Airport (IATA Code)</label>
+        <input type="text" id="origin" list="airport-list" placeholder="e.g. ATL, ORD, DFW" maxlength="3" required style="text-transform: uppercase;">
+        <datalist id="airport-list"></datalist>
+      </div>
+
+      <div class="row">
+        <div class="form-group">
+          <label for="dep-date">Departure Date</label>
+          <input type="date" id="dep-date" required>
+        </div>
+        <div class="form-group">
+          <label for="dep-time">Departure Time</label>
+          <input type="time" id="dep-time" required>
+        </div>
+      </div>
+
+      <button type="submit" class="btn" id="submit-btn">Predict Delay</button>
+    </form>
+
+    <div class="error-msg" id="error-msg"></div>
+
+    <div class="result-card" id="result-card">
+      <div class="result-header">
+        <span class="status-badge" id="status-badge"></span>
+        <span class="result-route" id="result-route"></span>
+      </div>
+
+      <div class="metrics">
+        <div class="metric">
+          <div class="metric-value" id="cancel-pct">-</div>
+          <div class="metric-label">Cancellation Risk</div>
+        </div>
+        <div class="metric">
+          <div class="metric-value" id="delay-pct">-</div>
+          <div class="metric-label">Delay Probability</div>
+        </div>
+        <div class="metric">
+          <div class="metric-value" id="delay-mins">-</div>
+          <div class="metric-label">Expected Delay</div>
+        </div>
+      </div>
+
+      <div class="llm-analysis" id="llm-section">
+        <h3>AI Analysis</h3>
+        <p id="llm-text"></p>
+      </div>
+
+      <div class="shap-section" id="shap-section">
+        <h3>Top Contributing Factors</h3>
+        <div id="shap-bars"></div>
+      </div>
+    </div>
+
+    <div class="footer">
+      <p>Trained on 2024 BTS On-Time data + Open-Meteo weather | XGBoost V2/V3 hybrid</p>
+    </div>
+  </div>
+
+  <script>
+    // Populate airport datalist
+    const AIRPORTS = ["ABE","ABI","ABQ","ABR","ABY","ACK","ACT","ACV","ACY","ADK","ADQ","AEX","AGS","AKN","ALB","ALW","AMA","ANC","APN","ASE","ATL","ATW","AUS","AVL","AVP","AZA","AZO","BDL","BET","BFL","BGM","BGR","BHM","BIL","BIS","BJI","BLI","BLV","BMI","BNA","BOI","BOS","BPT","BQK","BQN","BRD","BRO","BRW","BTM","BTR","BTV","BUF","BUR","BWI","BZN","CAE","CAK","CDC","CDV","CHA","CHO","CHS","CID","CIU","CKB","CLE","CLL","CLT","CMH","CMI","CMX","CNY","COD","COS","COU","CPR","CRP","CRW","CSG","CVG","CWA","DAB","DAL","DAY","DBQ","DCA","DEN","DFW","DHN","DIK","DLG","DLH","DRO","DSM","DTW","DUT","DVL","EAR","EAU","ECP","EGE","EKO","ELM","ELP","ERI","ESC","EUG","EVV","EWN","EWR","EYW","FAI","FAR","FAT","FAY","FCA","FLG","FLL","FLO","FNT","FSD","FSM","FWA","GCC","GCK","GEG","GFK","GGG","GJT","GNV","GPT","GRB","GRI","GRK","GRR","GSO","GSP","GST","GTF","GTR","GUC","GUM","HDN","HGR","HHH","HIB","HLN","HNL","HOB","HOU","HPN","HRL","HSV","HTS","HVN","IAD","IAG","IAH","ICT","IDA","ILM","IMT","IND","INL","ISN","ISP","ITH","ITO","JAC","JAN","JAX","JFK","JLN","JMS","JNU","KOA","KTN","LAR","LAS","LAW","LAX","LBB","LBE","LBF","LCH","LEX","LFT","LGA","LGB","LIH","LIT","LNK","LNY","LRD","LSE","LWS","MAF","MBS","MCI","MCO","MDT","MDW","MEM","MFE","MFR","MGM","MHK","MHT","MIA","MKE","MKG","MKK","MLB","MLI","MLU","MMH","MOB","MOT","MQT","MRY","MSN","MSO","MSP","MSY","MTJ","MVY","MYR","OAJ","OAK","OGD","OGG","OKC","OMA","OME","ONT","ORD","ORF","ORH","OTZ","OWB","PAE","PAH","PBG","PBI","PDX","PGD","PGV","PHF","PHL","PHX","PIA","PIB","PIE","PIH","PIT","PLN","PNS","PPG","PSC","PSE","PSG","PSP","PUB","PVD","PVU","PWM","RAP","RDD","RDM","RDU","RFD","RHI","RIC","RKS","RNO","ROA","ROC","ROW","RST","RSW","SAF","SAN","SAT","SAV","SBA","SBN","SBP","SCC","SCE","SDF","SEA","SFB","SFO","SGF","SGU","SHD","SHR","SHV","SIT","SJC","SJT","SJU","SLC","SMF","SMX","SNA","SPI","SPN","SPS","SRQ","STC","STL","STT","STX","SUN","SUX","SWF","SYR","TLH","TOL","TPA","TRI","TTN","TUL","TUS","TVC","TWF","TXK","TYR","TYS","UIN","USA","UST","VEL","VLD","VPS","WRG","WYS","XNA","YAK","YKM","YUM"];
+
+    const datalist = document.getElementById('airport-list');
+    AIRPORTS.forEach(code => {
+      const opt = document.createElement('option');
+      opt.value = code;
+      datalist.appendChild(opt);
+    });
+
+    // Set default date to tomorrow
+    const tomorrow = new Date();
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    document.getElementById('dep-date').value = tomorrow.toISOString().split('T')[0];
+    document.getElementById('dep-time').value = '10:00';
+
+    // Force uppercase on origin input
+    document.getElementById('origin').addEventListener('input', function() {
+      this.value = this.value.toUpperCase();
+    });
+
+    // Form submission
+    document.getElementById('predict-form').addEventListener('submit', async function(e) {
+      e.preventDefault();
+
+      const btn = document.getElementById('submit-btn');
+      const errEl = document.getElementById('error-msg');
+      const resultEl = document.getElementById('result-card');
+
+      btn.disabled = true;
+      btn.innerHTML = '<span class="spinner"></span>Predicting...';
+      errEl.classList.remove('show');
+      resultEl.classList.remove('show');
+
+      const payload = {
+        carrier: document.getElementById('carrier').value,
+        flight_num: parseInt(document.getElementById('flight-num').value),
+        origin: document.getElementById('origin').value.toUpperCase(),
+        dep_date: document.getElementById('dep-date').value,
+        dep_time: document.getElementById('dep-time').value,
+      };
+
+      try {
+        const resp = await fetch('/api/predict', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        });
+
+        const data = await resp.json();
+
+        if (!resp.ok) {
+          throw new Error(data.error || 'Prediction failed');
+        }
+
+        renderResult(data, payload);
+      } catch (err) {
+        errEl.textContent = err.message;
+        errEl.classList.add('show');
+      } finally {
+        btn.disabled = false;
+        btn.textContent = 'Predict Delay';
+      }
+    });
+
+    function renderResult(data, input) {
+      const card = document.getElementById('result-card');
+      const badge = document.getElementById('status-badge');
+
+      // Route display
+      document.getElementById('result-route').innerHTML =
+        `${input.carrier}${input.flight_num} &nbsp; ${input.origin} <span>&rarr;</span> ${data.destination}`;
+
+      // Status badge
+      const cancelPct = data.cancel_probability * 100;
+      const delayPct = data.delay_probability * 100;
+
+      if (cancelPct > 50) {
+        badge.textContent = 'High Cancellation Risk';
+        badge.className = 'status-badge status-red';
+      } else if (delayPct > 60) {
+        badge.textContent = 'Likely Delayed';
+        badge.className = 'status-badge status-red';
+      } else if (delayPct > 35) {
+        badge.textContent = 'Possible Delay';
+        badge.className = 'status-badge status-yellow';
+      } else {
+        badge.textContent = 'On Time';
+        badge.className = 'status-badge status-green';
+      }
+
+      // Metrics
+      document.getElementById('cancel-pct').textContent = cancelPct.toFixed(1) + '%';
+      document.getElementById('delay-pct').textContent = delayPct.toFixed(1) + '%';
+      const mins = data.expected_delay_minutes;
+      document.getElementById('delay-mins').textContent = mins <= 0 ? 'None' : Math.round(mins) + ' min';
+
+      // LLM analysis
+      const llmSection = document.getElementById('llm-section');
+      if (data.llm_analysis) {
+        document.getElementById('llm-text').textContent = data.llm_analysis;
+        llmSection.style.display = 'block';
+      } else {
+        llmSection.style.display = 'none';
+      }
+
+      // SHAP bars
+      const shapContainer = document.getElementById('shap-bars');
+      shapContainer.innerHTML = '';
+      if (data.shap_factors && data.shap_factors.length > 0) {
+        const maxVal = Math.max(...data.shap_factors.map(f => Math.abs(f.value)));
+        data.shap_factors.slice(0, 8).forEach(factor => {
+          const pct = Math.min(Math.abs(factor.value) / maxVal * 200, 200);
+          const cls = factor.value >= 0 ? 'pos' : 'neg';
+          const bar = document.createElement('div');
+          bar.className = 'shap-bar';
+          bar.innerHTML = `
+            <span class="shap-name" title="${factor.feature}">${factor.display_name || factor.feature}</span>
+            <span class="shap-fill ${cls}" style="width:${Math.max(pct, 4)}px"></span>
+            <span class="shap-val">${factor.value >= 0 ? '+' : ''}${factor.value.toFixed(3)}</span>
+          `;
+          shapContainer.appendChild(bar);
+        });
+        document.getElementById('shap-section').style.display = 'block';
+      } else {
+        document.getElementById('shap-section').style.display = 'none';
+      }
+
+      card.classList.add('show');
+      card.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }
+  </script>
+</body>
+</html>

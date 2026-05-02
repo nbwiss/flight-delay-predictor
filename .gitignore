@@ -1,0 +1,6 @@
+__pycache__/
+*.pyc
+.env
+venv/
+.vercel/
+# NOTE: model .joblib files MUST be co
