@@ -56,13 +56,29 @@ def _load_models():
     _models["target_encoder_c"] = joblib.load(V3_DIR / "target_encoder_c.joblib")
     _models["scaler_v3"] = joblib.load(V3_DIR / "scaler.joblib")
 
-    # Static data
-    with open(DATA_DIR / "route_lookup.json") as f:
-        _models["route_lookup"] = json.load(f)
+    # Static data (airport coordinates only — no historical route lookup)
     with open(DATA_DIR / "airport_coords.json") as f:
         _models["airport_coords"] = json.load(f)
 
     print(f"Models loaded. Features: {len(_models['feature_names'])}")
+
+
+def haversine_miles(lat1, lon1, lat2, lon2):
+    """Compute great-circle distance between two points in miles."""
+    R = 3958.8  # Earth radius in miles
+    lat1, lon1, lat2, lon2 = map(math.radians, [lat1, lon1, lat2, lon2])
+    dlat = lat2 - lat1
+    dlon = lon2 - lon1
+    a = math.sin(dlat / 2) ** 2 + math.cos(lat1) * math.cos(lat2) * math.sin(dlon / 2) ** 2
+    return 2 * R * math.asin(math.sqrt(a))
+
+
+def estimate_elapsed_minutes(distance_miles):
+    """Estimate flight time from distance. Accounts for taxi + cruise."""
+    # ~30 min taxi/climb/descent overhead + cruise at ~500 mph
+    if distance_miles <= 0:
+        return 60
+    return 30 + (distance_miles / 500) * 60
 
 
 # ═══════════════════════════════════════════════════════════════════════
@@ -459,7 +475,7 @@ def llm_synthesize(prediction: dict, flight_info: dict, origin_wx: dict, dest_wx
 plain-English analysis for the passenger. Be specific about the top contributing factors.
 Do not use bullet points. Be concise.
 
-Flight: {flight_info['carrier']}{flight_info['flight_num']} from {flight_info['origin']} to {prediction.get('destination', '?')}
+Flight: {flight_info['carrier']}{flight_info['flight_num']} from {flight_info['origin']} to {flight_info.get('dest', '?')}
 Date/Time: {flight_info['dep_date']} at {flight_info['dep_time']}
 
 Model Predictions:
@@ -548,35 +564,36 @@ class handler(BaseHTTPRequestHandler):
             carrier = body["carrier"]
             flight_num = int(body["flight_num"])
             origin = body["origin"].upper()
+            dest = body["dest"].upper()
             dep_date = body["dep_date"]
             dep_time = body["dep_time"]
 
-            # Route lookup
-            lookup_key = f"{carrier}|{flight_num}|{origin}"
-            route = _models["route_lookup"].get(lookup_key)
-
-            if not route:
-                self._send_json(404, {
-                    "error": f"Route not found for {carrier}{flight_num} from {origin}. "
-                             f"This flight may not have operated in 2024. "
-                             f"Try a different flight number or origin."
-                })
+            # Validate airports exist in our coordinates
+            coords = _models["airport_coords"]
+            if origin not in coords:
+                self._send_json(400, {"error": f"Unknown origin airport: {origin}"})
+                return
+            if dest not in coords:
+                self._send_json(400, {"error": f"Unknown destination airport: {dest}"})
                 return
 
-            dest = route["dest"]
-            distance = route["distance"]
-            elapsed = route["elapsed"]
-            arr_time_hhmm = route["arr_time"]
+            # Compute distance from airport coordinates (haversine)
+            o = coords[origin]
+            d = coords[dest]
+            distance = round(haversine_miles(o["lat"], o["lon"], d["lat"], d["lon"]), 1)
+
+            # Estimate flight elapsed time from distance
+            elapsed = round(estimate_elapsed_minutes(distance))
 
             # Compute arrival datetime for weather fetch
             dep_dt = datetime.fromisoformat(f"{dep_date}T{dep_time}")
-            arr_dt = dep_dt + timedelta(minutes=elapsed) if elapsed else dep_dt + timedelta(hours=2)
-            arr_dt_str = arr_dt.isoformat()
-            dep_dt_str = dep_dt.isoformat()
+            arr_dt = dep_dt + timedelta(minutes=elapsed)
+            arr_hour = arr_dt.hour
+            arr_time_hhmm = arr_hour * 100 + arr_dt.minute
 
-            # Fetch weather
-            origin_wx = fetch_weather(origin, dep_dt_str)
-            dest_wx = fetch_weather(dest, arr_dt_str)
+            # Fetch live weather forecasts from Open-Meteo
+            origin_wx = fetch_weather(origin, dep_dt.isoformat())
+            dest_wx = fetch_weather(dest, arr_dt.isoformat())
 
             # Build features
             features = build_feature_vector(
@@ -595,7 +612,8 @@ class handler(BaseHTTPRequestHandler):
             # LLM synthesis
             flight_info = {
                 "carrier": carrier, "flight_num": flight_num,
-                "origin": origin, "dep_date": dep_date, "dep_time": dep_time,
+                "origin": origin, "dest": dest,
+                "dep_date": dep_date, "dep_time": dep_time,
             }
             prediction["llm_analysis"] = llm_synthesize(prediction, flight_info, origin_wx, dest_wx)
 

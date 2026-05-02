@@ -37,6 +37,7 @@ sys.path.insert(0, str(BASE_DIR / "api"))
 from predict import (
     _models, _load_models, fetch_weather, build_feature_vector,
     predict as run_prediction, llm_synthesize, WEATHER_VARS,
+    haversine_miles, estimate_elapsed_minutes,
 )
 
 
@@ -59,27 +60,26 @@ def api_predict():
         carrier = body["carrier"]
         flight_num = int(body["flight_num"])
         origin = body["origin"].upper()
+        dest = body["dest"].upper()
         dep_date = body["dep_date"]
         dep_time = body["dep_time"]
 
-        # Route lookup
-        lookup_key = f"{carrier}|{flight_num}|{origin}"
-        route = _models["route_lookup"].get(lookup_key)
+        # Validate airports
+        coords = _models["airport_coords"]
+        if origin not in coords:
+            return jsonify({"error": f"Unknown origin airport: {origin}"}), 400
+        if dest not in coords:
+            return jsonify({"error": f"Unknown destination airport: {dest}"}), 400
 
-        if not route:
-            return jsonify({
-                "error": f"Route not found for {carrier}{flight_num} from {origin}. "
-                         f"This flight may not have operated in 2024. "
-                         f"Try a different flight number or origin."
-            }), 404
-
-        dest = route["dest"]
-        distance = route["distance"]
-        elapsed = route["elapsed"]
-        arr_time_hhmm = route["arr_time"]
+        # Compute distance and elapsed time from coordinates
+        o = coords[origin]
+        d = coords[dest]
+        distance = round(haversine_miles(o["lat"], o["lon"], d["lat"], d["lon"]), 1)
+        elapsed = round(estimate_elapsed_minutes(distance))
 
         dep_dt = datetime.fromisoformat(f"{dep_date}T{dep_time}")
-        arr_dt = dep_dt + timedelta(minutes=elapsed) if elapsed else dep_dt + timedelta(hours=2)
+        arr_dt = dep_dt + timedelta(minutes=elapsed)
+        arr_time_hhmm = arr_dt.hour * 100 + arr_dt.minute
 
         origin_wx = fetch_weather(origin, dep_dt.isoformat())
         dest_wx = fetch_weather(dest, arr_dt.isoformat())
@@ -98,7 +98,8 @@ def api_predict():
 
         flight_info = {
             "carrier": carrier, "flight_num": flight_num,
-            "origin": origin, "dep_date": dep_date, "dep_time": dep_time,
+            "origin": origin, "dest": dest,
+            "dep_date": dep_date, "dep_time": dep_time,
         }
         prediction["llm_analysis"] = llm_synthesize(prediction, flight_info, origin_wx, dest_wx)
 

@@ -101,11 +101,17 @@
         </div>
       </div>
 
-      <div class="form-group">
-        <label for="origin">Origin Airport (IATA Code)</label>
-        <input type="text" id="origin" list="airport-list" placeholder="e.g. ATL, ORD, DFW" maxlength="3" required style="text-transform: uppercase;">
-        <datalist id="airport-list"></datalist>
+      <div class="row">
+        <div class="form-group">
+          <label for="origin">Origin Airport</label>
+          <input type="text" id="origin" list="airport-list" placeholder="e.g. ATL" maxlength="3" required style="text-transform: uppercase;">
+        </div>
+        <div class="form-group">
+          <label for="dest">Destination Airport</label>
+          <input type="text" id="dest" list="airport-list" placeholder="e.g. LAX" maxlength="3" required style="text-transform: uppercase;">
+        </div>
       </div>
+      <datalist id="airport-list"></datalist>
 
       <div class="row">
         <div class="form-group">
@@ -177,8 +183,11 @@
     document.getElementById('dep-date').value = tomorrow.toISOString().split('T')[0];
     document.getElementById('dep-time').value = '10:00';
 
-    // Force uppercase on origin input
+    // Force uppercase on airport inputs
     document.getElementById('origin').addEventListener('input', function() {
+      this.value = this.value.toUpperCase();
+    });
+    document.getElementById('dest').addEventListener('input', function() {
       this.value = this.value.toUpperCase();
     });
 
@@ -199,6 +208,7 @@
         carrier: document.getElementById('carrier').value,
         flight_num: parseInt(document.getElementById('flight-num').value),
         origin: document.getElementById('origin').value.toUpperCase(),
+        dest: document.getElementById('dest').value.toUpperCase(),
         dep_date: document.getElementById('dep-date').value,
         dep_time: document.getElementById('dep-time').value,
       };
@@ -232,7 +242,7 @@
 
       // Route display
       document.getElementById('result-route').innerHTML =
-        `${input.carrier}${input.flight_num} &nbsp; ${input.origin} <span>&rarr;</span> ${data.destination}`;
+        `${input.carrier}${input.flight_num} &nbsp; ${input.origin} <span>&rarr;</span> ${input.dest}`;
 
       // Status badge
       const cancelPct = data.cancel_probability * 100;
