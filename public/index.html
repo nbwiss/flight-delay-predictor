@@ -39,8 +39,8 @@
     .result-route { font-size: 18px; font-weight: 600; }
     .result-route span { color: #666; font-weight: 400; font-size: 14px; }
 
-    .metrics { display: flex; gap: 16px; margin: 16px 0; }
-    .metric { flex: 1; text-align: center; padding: 12px; background: #f8f8f8; border-radius: 6px; }
+    .metric-group { display: grid; grid-template-columns: repeat(2, 1fr); gap: 16px; margin: 24px 0; }
+    .metric { text-align: center; padding: 12px; background: #f8f8f8; border-radius: 6px; }
     .metric-value { font-size: 22px; font-weight: 700; }
     .metric-label { font-size: 11px; color: #666; margin-top: 2px; }
 
@@ -72,12 +72,6 @@
 
       /* Stack form rows vertically on small screens */
       .row { flex-direction: column; gap: 0; }
-
-      /* Metrics: tighten spacing, shrink font so 3 tiles fit */
-      .metrics { gap: 8px; }
-      .metric { padding: 10px 4px; }
-      .metric-value { font-size: 18px; }
-      .metric-label { font-size: 10px; }
 
       /* Result header: wrap badge + route onto separate lines if needed */
       .result-header { flex-wrap: wrap; gap: 6px; }
@@ -159,7 +153,7 @@
         <span class="result-route" id="result-route"></span>
       </div>
 
-      <div class="metrics">
+      <div class="metric-group">
         <div class="metric">
           <div class="metric-value" id="cancel-pct">-</div>
           <div class="metric-label">Cancellation Risk</div>
@@ -167,10 +161,6 @@
         <div class="metric">
           <div class="metric-value" id="delay-pct">-</div>
           <div class="metric-label">Delay Probability</div>
-        </div>
-        <div class="metric">
-          <div class="metric-value" id="delay-mins">-</div>
-          <div class="metric-label">Expected Delay</div>
         </div>
       </div>
 
@@ -297,8 +287,6 @@
       // Metrics
       document.getElementById('cancel-pct').textContent = cancelPct.toFixed(1) + '%';
       document.getElementById('delay-pct').textContent = delayPct.toFixed(1) + '%';
-      const mins = data.expected_delay_minutes;
-      document.getElementById('delay-mins').textContent = mins <= 0 ? 'None' : Math.round(mins) + ' min';
 
       // LLM analysis
       const llmSection = document.getElementById('llm-section');
