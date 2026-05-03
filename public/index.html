@@ -96,7 +96,7 @@
     <h1>Flight Delay Predictor</h1>
     <p class="subtitle">Enter your flight details to get a delay prediction powered by ML models trained on 7M+ flights.</p>
 
-    <form id="predict-form" autocomplete="off">
+    <form id="predict-form" autocomplete="off" onsubmit="event.preventDefault();">
       <div class="row">
         <div class="form-group">
           <label for="carrier">Airline</label>
@@ -128,11 +128,11 @@
       <div class="row">
         <div class="form-group">
           <label for="origin">Origin Airport</label>
-          <input type="text" id="origin" list="airport-list" placeholder="e.g. ATL" maxlength="3" required style="text-transform: uppercase;">
+          <input type="text" id="origin" list="airport-list" placeholder="e.g. ATL" required style="text-transform: uppercase;">
         </div>
         <div class="form-group">
           <label for="dest">Destination Airport</label>
-          <input type="text" id="dest" list="airport-list" placeholder="e.g. LAX" maxlength="3" required style="text-transform: uppercase;">
+          <input type="text" id="dest" list="airport-list" placeholder="e.g. LAX" required style="text-transform: uppercase;">
         </div>
       </div>
       <datalist id="airport-list"></datalist>
@@ -148,7 +148,7 @@
         </div>
       </div>
 
-      <button type="submit" class="btn" id="submit-btn">Predict Delay</button>
+      <button type="button" class="btn" id="submit-btn">Predict Delay</button>
     </form>
 
     <div class="error-msg" id="error-msg"></div>
@@ -216,8 +216,14 @@
     });
 
     // Form submission
-    document.getElementById('predict-form').addEventListener('submit', async function(e) {
+    document.getElementById('submit-btn').addEventListener('click', async function(e) {
       e.preventDefault();
+
+      const form = document.getElementById('predict-form');
+      if (!form.checkValidity()) {
+        form.reportValidity();
+        return;
+      }
 
       const btn = document.getElementById('submit-btn');
       const errEl = document.getElementById('error-msg');
@@ -228,11 +234,17 @@
       errEl.classList.remove('show');
       resultEl.classList.remove('show');
 
+      function extractIata(val) {
+        const match = val.match(/\(([A-Z]{3})\)/i);
+        if (match) return match[1].toUpperCase();
+        return val.trim().substring(0, 3).toUpperCase();
+      }
+
       const payload = {
         carrier: document.getElementById('carrier').value,
         flight_num: parseInt(document.getElementById('flight-num').value),
-        origin: document.getElementById('origin').value.toUpperCase(),
-        dest: document.getElementById('dest').value.toUpperCase(),
+        origin: extractIata(document.getElementById('origin').value),
+        dest: extractIata(document.getElementById('dest').value),
         dep_date: document.getElementById('dep-date').value,
         dep_time: document.getElementById('dep-time').value,
       };
@@ -298,4 +310,34 @@
         document.getElementById('llm-text').textContent = data.llm_analysis;
         llmSection.style.display = 'block';
       } else {
-        llmSection.style.displa
+        llmSection.style.display = 'none';
+      }
+
+      // SHAP bars
+      const shapContainer = document.getElementById('shap-bars');
+      shapContainer.innerHTML = '';
+      if (data.shap_factors && data.shap_factors.length > 0) {
+        const maxVal = Math.max(...data.shap_factors.map(f => Math.abs(f.value)));
+        data.shap_factors.slice(0, 8).forEach(factor => {
+          const pct = Math.min(Math.abs(factor.value) / maxVal * 200, 200);
+          const cls = factor.value >= 0 ? 'pos' : 'neg';
+          const bar = document.createElement('div');
+          bar.className = 'shap-bar';
+          bar.innerHTML = `
+            <span class="shap-name" title="${factor.feature}">${factor.display_name || factor.feature}</span>
+            <span class="shap-fill ${cls}" style="width:${Math.max(pct, 4)}px"></span>
+            <span class="shap-val">${factor.value >= 0 ? '+' : ''}${factor.value.toFixed(3)}</span>
+          `;
+          shapContainer.appendChild(bar);
+        });
+        document.getElementById('shap-section').style.display = 'block';
+      } else {
+        document.getElementById('shap-section').style.display = 'none';
+      }
+
+      card.classList.add('show');
+      card.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }
+  </script>
+</body>
+</html>
