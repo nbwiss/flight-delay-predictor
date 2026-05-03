@@ -201,11 +201,7 @@
       datalist.appendChild(opt);
     });
 
-    // Set default date to tomorrow
-    const tomorrow = new Date();
-    tomorrow.setDate(tomorrow.getDate() + 1);
-    document.getElementById('dep-date').value = tomorrow.toISOString().split('T')[0];
-    document.getElementById('dep-time').value = '10:00';
+    // Departure date and time are left blank by default for the user to fill in
 
     // Force uppercase on airport inputs
     document.getElementById('origin').addEventListener('input', function() {
