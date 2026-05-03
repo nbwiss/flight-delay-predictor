@@ -11,14 +11,21 @@ import os
 import json
 import math
 import traceback
+import warnings
 from datetime import datetime, timedelta
 from http.server import BaseHTTPRequestHandler
 from pathlib import Path
 
 import numpy as np
+import pandas as pd
 import joblib
 import requests
 import xgboost as xgb
+
+# Suppress XGBoost GPU-to-CPU fallback warnings (models trained on GPU, deployed on CPU)
+warnings.filterwarnings("ignore", message=".*Changing updater from.*grow_gpu_hist.*")
+warnings.filterwarnings("ignore", message=".*No visible GPU is found.*")
+warnings.filterwarnings("ignore", message=".*Device is changed from GPU to CPU.*")
 
 # ═══════════════════════════════════════════════════════════════════════
 # PATHS — resolve relative to this file for Vercel serverless
@@ -50,6 +57,15 @@ def _load_models():
     _models["num_cols"] = joblib.load(V2_DIR / "num_cols.joblib")
     _models["cat_cols"] = joblib.load(V2_DIR / "cat_cols.joblib")
     _models["feature_names"] = joblib.load(V2_DIR / "feature_names.joblib")
+
+    # Force XGBoost models to CPU (they were trained on GPU)
+    for model_key in ("model_a", "model_b"):
+        m = _models[model_key]
+        if hasattr(m, 'set_params'):
+            try:
+                m.set_params(device="cpu", tree_method="hist")
+            except Exception:
+                pass
 
     # V3 model (Model C) is no longer loaded to save memory.
 
@@ -298,10 +314,12 @@ def preprocess_v2(features: dict) -> np.ndarray:
     num_arr = np.array([num_vals])
     num_scaled = scaler.transform(num_arr)
 
-    # Categorical values
-    cat_vals = [[features.get(col, "UNKNOWN") for col in cat_cols]]
+    # Categorical values — pass as DataFrame with column names to avoid
+    # "X does not have valid feature names" warning from OrdinalEncoder
+    cat_vals = {col: [features.get(col, "UNKNOWN")] for col in cat_cols}
+    cat_df = pd.DataFrame(cat_vals)
     try:
-        cat_encoded = encoder.transform(cat_vals)
+        cat_encoded = encoder.transform(cat_df)
     except Exception:
         # Handle unseen categories: set to 0
         cat_encoded = np.zeros((1, len(cat_cols)))
