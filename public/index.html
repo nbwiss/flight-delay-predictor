@@ -191,7 +191,14 @@
       datalist.appendChild(opt);
     });
 
-    // Departure date and time are left blank by default for the user to fill in
+    // Set min date to today so users can only pick today or future
+    (function setMinDate() {
+      const now = new Date();
+      const yyyy = now.getFullYear();
+      const mm = String(now.getMonth() + 1).padStart(2, '0');
+      const dd = String(now.getDate()).padStart(2, '0');
+      document.getElementById('dep-date').setAttribute('min', `${yyyy}-${mm}-${dd}`);
+    })();
 
     // Force uppercase on airport inputs
     document.getElementById('origin').addEventListener('input', function() {
@@ -226,12 +233,25 @@
         return val.trim().substring(0, 3).toUpperCase();
       }
 
+      // Validate date is today or future
+      const depDateVal = document.getElementById('dep-date').value;
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      const selected = new Date(depDateVal + 'T00:00:00');
+      if (selected < today) {
+        errEl.textContent = 'Please select today\'s date or a future date. Past flight predictions are not supported.';
+        errEl.classList.add('show');
+        btn.disabled = false;
+        btn.textContent = 'Predict Delay';
+        return;
+      }
+
       const payload = {
         carrier: document.getElementById('carrier').value,
         flight_num: parseInt(document.getElementById('flight-num').value),
         origin: extractIata(document.getElementById('origin').value),
         dest: extractIata(document.getElementById('dest').value),
-        dep_date: document.getElementById('dep-date').value,
+        dep_date: depDateVal,
         dep_time: document.getElementById('dep-time').value,
       };
 

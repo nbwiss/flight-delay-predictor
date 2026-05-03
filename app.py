@@ -64,6 +64,12 @@ def api_predict():
         dep_date = body["dep_date"]
         dep_time = body["dep_time"]
 
+        # Validate date is today or future (no past-flight predictions)
+        from datetime import date as _date
+        dep_date_obj = datetime.strptime(dep_date, "%Y-%m-%d").date()
+        if dep_date_obj < _date.today():
+            return jsonify({"error": "Only today's flights or upcoming flights can be predicted. Past dates are not supported."}), 400
+
         # Validate airports
         coords = _models["airport_coords"]
         if origin not in coords:

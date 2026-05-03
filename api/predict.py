@@ -527,6 +527,13 @@ class handler(BaseHTTPRequestHandler):
             dep_date = body["dep_date"]
             dep_time = body["dep_time"]
 
+            # Validate date is today or future (no past-flight predictions)
+            from datetime import date as _date
+            dep_date_obj = datetime.strptime(dep_date, "%Y-%m-%d").date()
+            if dep_date_obj < _date.today():
+                self._send_json(400, {"error": "Only today's flights or upcoming flights can be predicted. Past dates are not supported."})
+                return
+
             # Validate airports exist in our coordinates
             coords = _models["airport_coords"]
             if origin not in coords:
