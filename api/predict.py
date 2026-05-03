@@ -51,10 +51,7 @@ def _load_models():
     _models["cat_cols"] = joblib.load(V2_DIR / "cat_cols.joblib")
     _models["feature_names"] = joblib.load(V2_DIR / "feature_names.joblib")
 
-    # V3 artifacts (Model C only)
-    _models["model_c"] = joblib.load(V3_DIR / "model_c_minutes.joblib")
-    _models["target_encoder_c"] = joblib.load(V3_DIR / "target_encoder_c.joblib")
-    _models["scaler_v3"] = joblib.load(V3_DIR / "scaler.joblib")
+    # V3 model (Model C) is no longer loaded to save memory.
 
     # Static data (airport coordinates only — no historical route lookup)
     with open(DATA_DIR / "airport_coords.json") as f:
@@ -324,49 +321,6 @@ def preprocess_v2(features: dict) -> np.ndarray:
     return combined
 
 
-def preprocess_v3_c(features: dict) -> np.ndarray:
-    """Apply V3 preprocessing for Model C: target encode cats, scale nums."""
-    import pandas as pd
-
-    num_cols = _models["num_cols"]
-    cat_cols = _models["cat_cols"]
-    feature_names = _models["feature_names"]
-    medians = _models["medians"]
-    scaler_v3 = _models["scaler_v3"]
-    target_enc = _models["target_encoder_c"]
-
-    # Numeric values with median imputation
-    num_vals = []
-    for col in num_cols:
-        val = features.get(col)
-        if val is None or (isinstance(val, float) and math.isnan(val)):
-            val = float(medians.get(col, 0)) if hasattr(medians, 'get') else 0
-        num_vals.append(float(val))
-
-    num_arr = np.array([num_vals])
-    num_scaled = scaler_v3.transform(num_arr)
-
-    # Target encode categoricals
-    cat_df = pd.DataFrame([[features.get(col, "UNKNOWN") for col in cat_cols]], columns=cat_cols)
-    try:
-        cat_encoded = target_enc.transform(cat_df)
-    except Exception:
-        cat_encoded = pd.DataFrame(np.zeros((1, len(cat_cols))), columns=cat_cols)
-
-    cat_arr = cat_encoded.values if hasattr(cat_encoded, 'values') else np.array(cat_encoded)
-
-    # Combine in feature_names order
-    combined = np.zeros((1, len(feature_names)))
-    for i, fname in enumerate(feature_names):
-        if fname in cat_cols:
-            col_pos = cat_cols.index(fname)
-            combined[0, i] = cat_arr[0, col_pos]
-        elif fname in num_cols:
-            col_pos = num_cols.index(fname)
-            combined[0, i] = num_scaled[0, col_pos]
-
-    return combined
-
 
 def predict(features: dict) -> dict:
     """Run the cascade: Model A (cancel) -> Model B (delay) -> Model C (minutes)."""
@@ -382,15 +336,7 @@ def predict(features: dict) -> dict:
     model_b = _models["model_b"]
     delay_prob = float(model_b.predict_proba(X_v2)[0, 1])
 
-    # Model C: Expected delay minutes (V3 preprocessing)
-    X_v3 = preprocess_v3_c(features)
-    model_c = _models["model_c"]
-    delay_minutes = float(model_c.predict(X_v3)[0])
 
-    # Model C is a TransformedTargetRegressor with log1p/expm1.
-    # The predict() method already inverse-transforms, so delay_minutes
-    # is in raw minutes. Clamp to >= 0.
-    delay_minutes = max(0, delay_minutes)
 
     # SHAP factors for delay model (Model B)
     feature_names = _models["feature_names"]
@@ -418,7 +364,6 @@ def predict(features: dict) -> dict:
     return {
         "cancel_probability": round(cancel_prob, 4),
         "delay_probability": round(delay_prob, 4),
-        "expected_delay_minutes": round(delay_minutes, 1),
         "shap_factors": shap_list,
     }
 
@@ -497,7 +442,6 @@ Date/Time: {flight_info['dep_date']} at {flight_info['dep_time']}
 Model Predictions:
 - Cancellation probability: {prediction['cancel_probability']*100:.1f}%
 - Delay probability (>=15 min): {prediction['delay_probability']*100:.1f}%
-- Expected delay: {prediction['expected_delay_minutes']:.0f} minutes
 
 Origin weather: temp {origin_wx.get('temperature_2m','?')}F, wind {origin_wx.get('wind_speed_10m','?')}mph, gusts {origin_wx.get('wind_gusts_10m','?')}mph, visibility {origin_wx.get('visibility','?')}ft, precip {origin_wx.get('precipitation','?')}in
 Dest weather: temp {dest_wx.get('temperature_2m','?')}F, wind {dest_wx.get('wind_speed_10m','?')}mph, gusts {dest_wx.get('wind_gusts_10m','?')}mph, visibility {dest_wx.get('visibility','?')}ft, precip {dest_wx.get('precipitation','?')}in
@@ -525,7 +469,6 @@ def _template_analysis(prediction: dict, flight_info: dict, origin_wx: dict, des
     """Fallback template when Gemini API is unavailable."""
     cancel_pct = prediction["cancel_probability"] * 100
     delay_pct = prediction["delay_probability"] * 100
-    mins = prediction["expected_delay_minutes"]
 
     parts = []
 
@@ -537,9 +480,9 @@ def _template_analysis(prediction: dict, flight_info: dict, origin_wx: dict, des
         parts.append(f"Cancellation risk is low at {cancel_pct:.0f}%.")
 
     if delay_pct > 50:
-        parts.append(f"There is a {delay_pct:.0f}% chance of a significant delay (15+ minutes), with an expected delay of about {mins:.0f} minutes.")
+        parts.append(f"There is a {delay_pct:.0f}% chance of a significant delay (15+ minutes).")
     elif delay_pct > 25:
-        parts.append(f"Moderate delay risk at {delay_pct:.0f}%. If delayed, expect around {mins:.0f} minutes.")
+        parts.append(f"Moderate delay risk at {delay_pct:.0f}%.")
     else:
         parts.append(f"Low delay risk at {delay_pct:.0f}%. The flight is likely to arrive close to schedule.")
 
