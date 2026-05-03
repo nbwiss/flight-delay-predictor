@@ -65,6 +65,30 @@
 
     .footer { margin-top: 40px; text-align: center; font-size: 11px; color: #999; }
     .footer a { color: #999; }
+
+    /* ── Mobile responsive ── */
+    @media (max-width: 520px) {
+      .container { padding: 24px 14px; }
+
+      /* Stack form rows vertically on small screens */
+      .row { flex-direction: column; gap: 0; }
+
+      /* Metrics: tighten spacing, shrink font so 3 tiles fit */
+      .metrics { gap: 8px; }
+      .metric { padding: 10px 4px; }
+      .metric-value { font-size: 18px; }
+      .metric-label { font-size: 10px; }
+
+      /* Result header: wrap badge + route onto separate lines if needed */
+      .result-header { flex-wrap: wrap; gap: 6px; }
+      .result-route { font-size: 15px; }
+
+      /* SHAP bars: narrow name column so bars have room to render */
+      .shap-name { width: 110px; font-size: 11px; }
+
+      /* Reduce result card padding */
+      .result-card { padding: 16px; }
+    }
   </style>
 </head>
 <body>
@@ -274,34 +298,4 @@
         document.getElementById('llm-text').textContent = data.llm_analysis;
         llmSection.style.display = 'block';
       } else {
-        llmSection.style.display = 'none';
-      }
-
-      // SHAP bars
-      const shapContainer = document.getElementById('shap-bars');
-      shapContainer.innerHTML = '';
-      if (data.shap_factors && data.shap_factors.length > 0) {
-        const maxVal = Math.max(...data.shap_factors.map(f => Math.abs(f.value)));
-        data.shap_factors.slice(0, 8).forEach(factor => {
-          const pct = Math.min(Math.abs(factor.value) / maxVal * 200, 200);
-          const cls = factor.value >= 0 ? 'pos' : 'neg';
-          const bar = document.createElement('div');
-          bar.className = 'shap-bar';
-          bar.innerHTML = `
-            <span class="shap-name" title="${factor.feature}">${factor.display_name || factor.feature}</span>
-            <span class="shap-fill ${cls}" style="width:${Math.max(pct, 4)}px"></span>
-            <span class="shap-val">${factor.value >= 0 ? '+' : ''}${factor.value.toFixed(3)}</span>
-          `;
-          shapContainer.appendChild(bar);
-        });
-        document.getElementById('shap-section').style.display = 'block';
-      } else {
-        document.getElementById('shap-section').style.display = 'none';
-      }
-
-      card.classList.add('show');
-      card.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-    }
-  </script>
-</body>
-</html>
+        llmSection.style.displa

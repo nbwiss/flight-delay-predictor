@@ -96,30 +96,48 @@ WEATHER_VARS = [
 
 def fetch_weather(iata: str, target_dt: str) -> dict:
     """
-    Fetch forecast weather for an airport at a target datetime.
-    Uses Open-Meteo Forecast API (free, no key needed).
-    Same variable names + units as training data.
+    Fetch weather for an airport at a target datetime.
+    - Past dates  → Open-Meteo Historical Archive API (ERA5 reanalysis, same
+                    source as training data).
+    - Today/future → Open-Meteo Forecast API (up to ~16 days out).
+
+    Both endpoints use timezone=auto so returned times are in the airport's
+    local timezone, matching the local departure/arrival times the user enters.
     """
     coords = _models["airport_coords"].get(iata)
     if not coords:
         return {v: None for v in WEATHER_VARS}
 
-    params = {
+    target = datetime.fromisoformat(target_dt)
+    target_date = target.date()
+    today = datetime.utcnow().date()
+
+    # Common params shared by both APIs
+    base_params = {
         "latitude": coords["lat"],
         "longitude": coords["lon"],
         "hourly": ",".join(WEATHER_VARS),
         "temperature_unit": "fahrenheit",
         "wind_speed_unit": "mph",
         "precipitation_unit": "inch",
-        "timezone": "UTC",
+        "timezone": "auto",  # Returns times in airport's local timezone
     }
 
+    is_historical = target_date < today
+
+    if is_historical:
+        url = "https://archive-api.open-meteo.com/v1/archive"
+        params = {
+            **base_params,
+            "start_date": target_date.isoformat(),
+            "end_date": target_date.isoformat(),
+        }
+    else:
+        url = "https://api.open-meteo.com/v1/forecast"
+        params = base_params
+
     try:
-        resp = requests.get(
-            "https://api.open-meteo.com/v1/forecast",
-            params=params,
-            timeout=10,
-        )
+        resp = requests.get(url, params=params, timeout=10)
         resp.raise_for_status()
         data = resp.json()
         hourly = data.get("hourly", {})
@@ -128,8 +146,7 @@ def fetch_weather(iata: str, target_dt: str) -> dict:
         if not times:
             return {v: None for v in WEATHER_VARS}
 
-        # Find closest hour
-        target = datetime.fromisoformat(target_dt)
+        # Find closest hour to target (both naive local-time datetimes)
         best_idx = 0
         best_diff = float("inf")
         for i, t in enumerate(times):
@@ -146,7 +163,7 @@ def fetch_weather(iata: str, target_dt: str) -> dict:
         return result
 
     except Exception as e:
-        print(f"Weather fetch failed for {iata}: {e}")
+        print(f"Weather fetch failed for {iata} ({'archive' if is_historical else 'forecast'}): {e}")
         return {v: None for v in WEATHER_VARS}
 
 
@@ -614,42 +631,4 @@ class handler(BaseHTTPRequestHandler):
                 "carrier": carrier, "flight_num": flight_num,
                 "origin": origin, "dest": dest,
                 "dep_date": dep_date, "dep_time": dep_time,
-            }
-            prediction["llm_analysis"] = llm_synthesize(prediction, flight_info, origin_wx, dest_wx)
-
-            # Weather summary for frontend
-            prediction["origin_weather"] = {
-                "temp": origin_wx.get("temperature_2m"),
-                "wind": origin_wx.get("wind_speed_10m"),
-                "visibility": origin_wx.get("visibility"),
-            }
-            prediction["dest_weather"] = {
-                "temp": dest_wx.get("temperature_2m"),
-                "wind": dest_wx.get("wind_speed_10m"),
-                "visibility": dest_wx.get("visibility"),
-            }
-
-            self._send_json(200, prediction)
-
-        except KeyError as e:
-            self._send_json(400, {"error": f"Missing field: {e}"})
-        except Exception as e:
-            traceback.print_exc()
-            self._send_json(500, {"error": str(e)})
-
-    def do_GET(self):
-        self._send_json(200, {"status": "ok", "message": "POST flight data to this endpoint"})
-
-    def _send_json(self, status: int, data: dict):
-        self.send_response(status)
-        self.send_header("Content-Type", "application/json")
-        self.send_header("Access-Control-Allow-Origin", "*")
-        self.end_headers()
-        self.wfile.write(json.dumps(data).encode())
-
-    def do_OPTIONS(self):
-        self.send_response(204)
-        self.send_header("Access-Control-Allow-Origin", "*")
-        self.send_header("Access-Control-Allow-Methods", "POST, OPTIONS")
-        self.send_header("Access-Control-Allow-Headers", "Content-Type")
-        self.end_headers()
+  
