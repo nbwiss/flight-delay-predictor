@@ -3,4 +3,12 @@ __pycache__/
 .env
 venv/
 .vercel/
-# NOTE: model .joblib files MUST be co
+# NOTE: model .joblib files MUST be cotraining/data/bts_raw/
+training/data/weather_openmeteo/
+training/data/weather_raw/
+training/data/output/
+training/data/logs/
+training/*.parquet
+training/*.csv
+training/*.joblib
+.ipynb_checkpoints/
